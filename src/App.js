@@ -1,70 +1,91 @@
-import { useEffect, useState } from 'react';
-import Web3 from 'web3';
+import React, { useEffect, useState } from 'react';
+import { ethers } from 'ethers';
 import TokenMaster from './abis/TokenMaster.json';
 
 function App() {
-  const [totalOccasions, setTotalOccasions] = useState(null);
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
+  const [account, setAccount] = useState(null);
+  const [networkName, setNetworkName] = useState("Unknown Network");
+  const [tokenMaster, setTokenMaster] = useState(null);
   const [occasions, setOccasions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [account, setAccount] = useState(null);
-  const [web3, setWeb3] = useState(null);
+
+  const loadBlockchainData = async () => {
+    try {
+      // Check if MetaMask is installed
+      if (window.ethereum) {
+        // Request account access from MetaMask
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+        // Connect to the local Hardhat network using MetaMask
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        setProvider(provider);
+
+        const signer = provider.getSigner();
+        setSigner(signer);
+
+        const account = await signer.getAddress();
+        setAccount(account);
+
+        const network = await provider.getNetwork();
+        
+        // Ensure user is connected to Hardhat local network
+        if (network.chainId !== 31337) {
+          alert("Please connect MetaMask to the Hardhat local network.");
+          return;
+        }
+
+        // Manually map network name if it's not recognized
+        let networkName = network.name;
+        if (network.chainId === 31337) { // Hardhat's default chain ID
+          networkName = "Hardhat";
+        } else if (networkName === "unknown") {
+          networkName = `Unknown (Chain ID: ${network.chainId})`;
+        }
+        setNetworkName(networkName);
+
+        // Connect to the contract
+        const tokenMaster = new ethers.Contract(
+          "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707", // Replace with your contract address
+          TokenMaster.abi,
+          signer // Use the signer here
+        );
+        setTokenMaster(tokenMaster);
+
+        // Fetch total occasions
+        const totalOccasions = await tokenMaster.totalOccasions();
+        const occasions = [];
+
+        for (let i = 1; i <= totalOccasions; i++) {
+          const occasion = await tokenMaster.getOccasion(i);
+          occasions.push(occasion);
+        }
+
+        setOccasions(occasions);
+        setLoading(false);
+
+      } else {
+        alert("MetaMask is not installed. Please install it to interact with this dApp.");
+      }
+
+    } catch (error) {
+      console.error("An error occurred:", error);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const initWeb3 = async () => {
-      let web3Instance;
-      if (window.ethereum) {
-        try {
-          // Initialize Web3 with MetaMask provider
-          web3Instance = new Web3(window.ethereum);
-          await window.ethereum.request({ method: 'eth_requestAccounts' });
-        } catch (error) {
-          console.error("MetaMask error:", error);
-          // Fall back to local provider if MetaMask is not working
-          web3Instance = new Web3(new Web3.providers.HttpProvider('http://127.0.0.1:8545'));
-        }
-      } else {
-        // MetaMask not detected, use local provider
-        web3Instance = new Web3(new Web3.providers.HttpProvider('http://127.0.0.1:8545'));
-      }
-
-      setWeb3(web3Instance);
-      
-      try {
-        // Get accounts
-        const accounts = await web3Instance.eth.getAccounts();
-        setAccount(accounts[0]);
-
-        // Load blockchain data
-        loadBlockchainData(web3Instance);
-      } catch (error) {
-        console.error("Error retrieving accounts:", error);
-      }
-    };
-
-    initWeb3();
+    loadBlockchainData();
   }, []);
 
-  const loadBlockchainData = async (web3Instance) => {
+  const handlePurchase = async (occasionId, amount) => {
     try {
-      const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
-      const tokenMaster = new web3Instance.eth.Contract(TokenMaster.abi, contractAddress);
-
-      // Get total occasions
-      const totalOccasions = await tokenMaster.methods.totalOccasions().call();
-      setTotalOccasions(totalOccasions);
-
-      // Fetch each occasion's details
-      const occasions = [];
-      for (let i = 1; i <= totalOccasions; i++) {
-        const occasion = await tokenMaster.methods.getOccasion(i).call();
-        occasions.push(occasion);
-      }
-
-      setOccasions(occasions);
-      setLoading(false);
+      const tx = await tokenMaster.purchaseTicket(occasionId, { value: ethers.utils.parseEther(amount) });
+      await tx.wait();
+      alert("Ticket purchased successfully!");
     } catch (error) {
-      console.error("Error loading blockchain data:", error);
-      setLoading(false);
+      console.error("Purchase failed:", error);
     }
   };
 
@@ -74,21 +95,25 @@ function App() {
         <p>Loading...</p>
       ) : (
         <div>
+          <h2>Connected to Network: {networkName}</h2>
           <h2>Connected Account: {account}</h2>
-          {totalOccasions === '0' ? (
+          {occasions.length === 0 ? (
             <h2>No Occasions</h2>
           ) : (
             <div>
-              <h2>Total Occasions: {totalOccasions}</h2>
+              <h2>Total Occasions: {occasions.length}</h2>
               <ul>
-                {occasions.map((occasion) => (
-                  <li key={occasion.id}>
+                {occasions.map((occasion, index) => (
+                  <li key={index}>
                     <h3>{occasion.name}</h3>
                     <p>Date: {occasion.date}</p>
                     <p>Time: {occasion.time}</p>
                     <p>Location: {occasion.location}</p>
-                    <p>Cost: {web3.utils.fromWei(occasion.cost, 'ether')} ETH</p>
+                    <p>Cost: {ethers.utils.formatEther(occasion.cost)} ETH</p>
                     <p>Tickets Available: {occasion.tickets}</p>
+                    <button onClick={() => handlePurchase(index + 1, "0.1")}>
+                      Purchase Ticket
+                    </button>
                   </li>
                 ))}
               </ul>
