@@ -1,31 +1,81 @@
-const hre = require("hardhat");
-const fs = require("fs");
+const hre = require("hardhat")
 
 const tokens = (n) => {
-  return ethers.utils.parseUnits(n.toString(), 'ether');
-};
-
-async function main() {
-  // Get the contract factory
-  const TokenMaster = await hre.ethers.getContractFactory("TokenMaster");
-
-  // Deploy the contract with the desired name and symbol
-  const tokenMaster = await TokenMaster.deploy("TokenMaster", "TM");
-
-  // Wait for the deployment to complete
-  await tokenMaster.deployed();
-
-  // Log the address of the deployed contract
-  console.log("TokenMaster deployed to:", tokenMaster.address);
-
-  // Save the deployed contract address to a file
-  const data = {
-    address: tokenMaster.address
-  };
-
-  fs.writeFileSync("deployedAddress.json", JSON.stringify(data, null, 2));
+  return ethers.utils.parseUnits(n.toString(), 'ether')
 }
 
+async function main() {
+  // Setup accounts & variables
+  const [deployer] = await ethers.getSigners()
+  const NAME = "TokenMaster"
+  const SYMBOL = "TM"
+
+  // Deploy contract
+  const TokenMaster = await ethers.getContractFactory("TokenMaster")
+  const tokenMaster = await TokenMaster.deploy(NAME, SYMBOL)
+  await tokenMaster.deployed()
+
+  console.log(`Deployed TokenMaster Contract at: ${tokenMaster.address}\n`)
+
+  // List 6 events
+  const occasions = [
+    {
+      name: "UFC Miami",
+      cost: tokens(3),
+      tickets: 0,
+      date: "May 31",
+      time: "6:00PM EST",
+      location: "Miami-Dade Arena - Miami, FL"
+    },
+    {
+      name: "ETH Tokyo",
+      cost: tokens(1),
+      tickets: 125,
+      date: "Jun 2",
+      time: "1:00PM JST",
+      location: "Tokyo, Japan"
+    },
+    {
+      name: "ETH Privacy Hackathon",
+      cost: tokens(0.25),
+      tickets: 200,
+      date: "Jun 9",
+      time: "10:00AM TRT",
+      location: "Turkey, Istanbul"
+    },
+    {
+      name: "Dallas Mavericks vs. San Antonio Spurs",
+      cost: tokens(5),
+      tickets: 0,
+      date: "Jun 11",
+      time: "2:30PM CST",
+      location: "American Airlines Center - Dallas, TX"
+    },
+    {
+      name: "ETH Global Toronto",
+      cost: tokens(1.5),
+      tickets: 125,
+      date: "Jun 23",
+      time: "11:00AM EST",
+      location: "Toronto, Canada"
+    }
+  ]
+
+  for (var i = 0; i < 5; i++) {
+    const transaction = await tokenMaster.connect(deployer).list(
+      occasions[i].name,
+      occasions[i].cost,
+      occasions[i].tickets,
+      occasions[i].date,
+      occasions[i].time,
+      occasions[i].location,
+    )
+
+    await transaction.wait()
+
+    console.log(`Listed Event ${i + 1}: ${occasions[i].name}`)
+  }
+}
 
 main().catch((error) => {
   console.error(error);
