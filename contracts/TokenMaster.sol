@@ -1,96 +1,121 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.9;
+import React, { useEffect, useState } from 'react';
+import { ethers } from 'ethers';
+import ABI from "./abis/TokenMaster.json";
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+function App() {
+  const [state, setState] = useState({
+    provider: null,
+    signer: null,
+    contract: null,
+  });
+  const [account, setAccount] = useState('Not connected');
+  const [networkName, setNetworkName] = useState("Unknown Network");
+  const [rpcUrl, setRpcUrl] = useState("");
+  const [totalOccasions, setTotalOccasions] = useState(0); // State to store the total occasions
+  const [occasions, setOccasions] = useState([]); // State to store the occasion details
 
-contract TokenMaster is ERC721 {
-    address public owner;
-    uint256 public totalOccasions;
-    uint256 public totalSupply;
+  useEffect(() => {
+    const loadBlockchainData = async () => {
+      try {
+        if (window.ethereum) {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          setAccount(accounts[0]);
 
-    struct Occasion {
-        uint256 id;
-        string name;
-        uint256 cost;
-        uint256 tickets;
-        uint256 maxTickets;
-        string date;
-        string time;
-        string location;
-    }
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const signer = provider.getSigner();
 
-    mapping(uint256 => Occasion) occasions;
-    mapping(uint256 => mapping(address => bool)) public hasBought;
-    mapping(uint256 => mapping(uint256 => address)) public seatTaken;
-    mapping(uint256 => uint256[]) seatsTaken;
+          const network = await provider.getNetwork();
+          console.log(network);
 
-    modifier onlyOwner() {
-        require(msg.sender == owner);
-        _;
-    }
+          let rpcUrl = '';
+          if (network.chainId === 1) {
+            rpcUrl = 'https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID';
+          } else if (network.chainId === 4) {
+            rpcUrl = 'https://rinkeby.infura.io/v3/YOUR_INFURA_PROJECT_ID';
+          } else if (network.chainId === 31337) {
+            rpcUrl = 'http://localhost:8545';
+          } else {
+            rpcUrl = `Custom RPC URL for Chain ID: ${network.chainId}`;
+          }
+          setRpcUrl(rpcUrl);
 
-    constructor(
-        string memory _name,
-        string memory _symbol
-    ) ERC721(_name, _symbol) {
-        owner = msg.sender;
-    }
+          let networkName = network.name;
+          if (network.chainId === 31337) {
+            networkName = "Hardhat";
+          } else if (networkName === "unknown") {
+            networkName = `Unknown (Chain ID: ${network.chainId})`;
+          }
+          setNetworkName(networkName);
 
-    function list(
-        string memory _name,
-        uint256 _cost,
-        uint256 _maxTickets,
-        string memory _date,
-        string memory _time,
-        string memory _location
-    ) public onlyOwner {
-        totalOccasions++;
-        occasions[totalOccasions] = Occasion(
-            totalOccasions,
-            _name,
-            _cost,
-            _maxTickets,
-            _maxTickets,
-            _date,
-            _time,
-            _location
-        );
-    }
+          // Create contract instance
+          const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+          const contract = new ethers.Contract(contractAddress, ABI.abi, signer);
+          console.log(contract);
 
-    function mint(uint256 _id, uint256 _seat) public payable {
-        // Require that _id is not 0 or less than total occasions...
-        require(_id != 0);
-        require(_id <= totalOccasions);
+          // Set the state with provider, signer, and contract
+          setState({ provider, signer, contract });
 
-        // Require that ETH sent is greater than cost...
-        require(msg.value >= occasions[_id].cost);
+          // Call totalOccasions function and update the state
+          const total = await contract.totalOccasions();
+          setTotalOccasions(total.toString()); // Convert to string and set state
 
-        // Require that the seat is not taken, and the seat exists...
-        require(seatTaken[_id][_seat] == address(0));
-        require(_seat <= occasions[_id].maxTickets);
+          const occasionsData = [];
+          for (let i = 1; i <= total; i++) {
+            const occasion = await contract.getOccasion(i);
+            occasionsData.push(occasion);
+          }
+          setOccasions(occasionsData); // Store all occasions in state
 
-        occasions[_id].tickets -= 1; // <-- Update ticket count
+        } else {
+          alert("MetaMask is not installed. Please install it to interact with this dApp.");
+        }
+      } catch (error) {
+        console.error("An error occurred:", error);
+      }
+    };
 
-        hasBought[_id][msg.sender] = true; // <-- Update buying status
-        seatTaken[_id][_seat] = msg.sender; // <-- Assign seat
+    loadBlockchainData();
+  }, []);
 
-        seatsTaken[_id].push(_seat); // <-- Update seats currently taken
+  return (
+    <div>
+      <img src="path-to-your-image" className="img-fluid" alt="TokenMaster" width="100%" />
+      <p style={{ marginTop: "10px", marginLeft: "5px" }}>
+        <small>Connected Account - {account}</small>
+      </p>
+      <div>
+        <h2>Connected to Network: {networkName}</h2>
+        <h2>RPC URL: {rpcUrl}</h2>
+      </div>
 
-        totalSupply++;
+      <div>
+        <h2>Total Occasions: {totalOccasions}</h2> {/* Display the total occasions */}
+      </div>
 
-        _safeMint(msg.sender, totalSupply);
-    }
+      <div>
+        <h2>Occasion Details:</h2>
+        {occasions.length > 0 ? (
+          occasions.map((occasion, index) => (
+            <div key={index}>
+              <h3>Occasion {occasion.id}</h3>
+              <p>Name: {occasion.name}</p>
+              <p>Cost: {ethers.utils.formatEther(occasion.cost)} ETH</p>
+              <p>Tickets Available: {occasion.tickets}</p>
+              <p>Date: {occasion.date}</p>
+              <p>Time: {occasion.time}</p>
+              <p>Location: {occasion.location}</p>
+            </div>
+          ))
+        ) : (
+          <p>No occasions available.</p>
+        )}
+      </div>
 
-    function getOccasion(uint256 _id) public view returns (Occasion memory) {
-        return occasions[_id];
-    }
-
-    function getSeatsTaken(uint256 _id) public view returns (uint256[] memory) {
-        return seatsTaken[_id];
-    }
-
-    function withdraw() public onlyOwner {
-        (bool success, ) = owner.call{value: address(this).balance}("");
-        require(success);
-    }
+      {/* Placeholder for your Buy and Memos components */}
+      {/* <Buy state={state} /> */}
+      {/* <Memos state={state} /> */}
+    </div>
+  );
 }
+
+export default App;
